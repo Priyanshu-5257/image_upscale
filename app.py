@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Import statements
-from new import ESRGANOptimized
+from model import ESRGANOptimized
 import gradio as gr
 import os
 import time
