@@ -5,7 +5,17 @@ from model import ESRGANOptimized
 import gradio as gr
 import os
 import time
+import psutil
 
+def get_optimal_threads():
+    cpu_count = psutil.cpu_count()
+    if cpu_count <= 2:
+        return 1
+    elif cpu_count <= 4:
+        return 2
+    else:
+        return cpu_count - 2
+    
 # Processing function
 def upscale_image(input_image):
     if input_image is None:
@@ -18,7 +28,7 @@ def upscale_image(input_image):
             tile_size=256,
             model_input_size=128,
             scale=4,
-            num_threads=4,
+            num_threads=get_optimal_threads(),
             overlap_size=16
         )
         

@@ -10,6 +10,7 @@ from queue import Queue
 import psutil
 
 
+    
 class ESRGANOptimized:
     def __init__(self, model_path, tile_size=256, model_input_size=128, prepad=0, scale=4, num_threads=2, overlap_size=32):
         self.model_path = model_path
