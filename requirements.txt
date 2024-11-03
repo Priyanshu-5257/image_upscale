@@ -1,0 +1,7 @@
+onnxruntime
+onnx
+gradio
+psutil
+pillow
+numpy
+gc-python-utils
