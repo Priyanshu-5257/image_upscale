@@ -11,7 +11,7 @@ import psutil
 
 
 class ESRGANOptimized:
-    def __init__(self, model_path, tile_size=256, model_input_size=128, prepad=0, scale=4, num_threads=2, overlap_size=32):
+    def __init__(self, model_path, tile_size=256, model_input_size=128, prepad=0, scale=4, num_threads=2, overlap_size=32, use_fp16=True):
         self.model_path = model_path
         self.base_tile_size = tile_size  # Base size for splitting the image
         self.model_input_size = model_input_size  # Fixed model input size (128)
@@ -20,6 +20,7 @@ class ESRGANOptimized:
         self.scale = scale
         self.overlap_size = overlap_size  # Size of overlap between tiles
         self.num_threads = min(num_threads, psutil.cpu_count() or 2)
+        self.use_fp16 = use_fp16
         self._init_model()
         self.tile_queue = Queue(maxsize=4)
         self.result_queue = Queue()
@@ -31,34 +32,43 @@ class ESRGANOptimized:
         self.session_opti.inter_op_num_threads = 1
         self.session_opti.execution_mode = onnxruntime.ExecutionMode.ORT_SEQUENTIAL
         self.session_opti.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
-        
+
+        # Enable mixed precision if using FP16
+        if self.use_fp16:
+            self.session_opti.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
+            
         self.session = onnxruntime.InferenceSession(
             self.model_path, 
             self.session_opti, 
             providers=['CPUExecutionProvider']
         )
         self.model_input = self.session.get_inputs()[0].name
+        
+        # Get input type from model
+        self.input_type = np.float16 if self.use_fp16 else np.float32
 
     def _calculate_tile_dimensions(self, img_width, img_height):
         """Calculate optimal tile dimensions based on image size and model constraints."""
         # Ensure tile size is divisible by model input size
         tile_size = self.base_tile_size - (self.base_tile_size % self.model_input_size)
-        print(tile_size)
+        print(f"Using tile size: {tile_size}")
+        
         # Calculate number of tiles needed
         num_width = int(np.ceil((img_width + self.overlap_size) / (tile_size - self.overlap_size)))
         num_height = int(np.ceil((img_height + self.overlap_size) / (tile_size - self.overlap_size)))
-        print(num_width, num_height)
+        print(f"Grid size: {num_width}x{num_height} tiles")
         return tile_size, num_width, num_height
 
     def _create_blending_mask(self, tile_size):
         """Create a blending mask for smooth tile transitions."""
-        mask = np.ones((tile_size, tile_size), dtype=np.float32)
+        mask = np.ones((tile_size, tile_size), dtype=self.input_type)
         
         # Create feathered edges for blending
         fade_dist = self.overlap_size
         for i in range(fade_dist):
             # Apply cosine interpolation for smooth blending
             fade = 0.5 * (1 - np.cos(np.pi * i / fade_dist))
+            fade = self.input_type(fade)  # Convert to FP16 if needed
             
             # Fade all edges
             mask[i, :] *= fade  # Top edge
@@ -72,8 +82,9 @@ class ESRGANOptimized:
         """Preprocess tile for model input."""
         # Resize tile to model input size
         img = img.resize((self.model_input_size, self.model_input_size), Image.BILINEAR)
-        #img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
-        input_data = np.asarray(img, dtype=np.float32).transpose(2, 0, 1) / 255.0
+        
+        # Convert to appropriate precision
+        input_data = np.asarray(img, dtype=self.input_type).transpose(2, 0, 1) / self.input_type(255.0)
         return input_data[np.newaxis, ...]
 
     def _process_tile_worker(self):
@@ -88,6 +99,11 @@ class ESRGANOptimized:
             try:
                 # Process the tile
                 result = self.session.run([], {self.model_input: tile})[0][0]
+                
+                # Convert result back to FP32 for image processing
+                if self.use_fp16:
+                    result = result.astype(np.float32)
+                
                 result = np.clip(result.transpose(1, 2, 0), 0, 1) * 255.0
                 result_img = Image.fromarray(result.round().astype(np.uint8))
                 
@@ -135,7 +151,7 @@ class ESRGANOptimized:
                 threads.append(t)
 
             # Process tiles
-            print(f"Processing {total_tiles} tiles...")
+            print(f"Processing {total_tiles} tiles using {'FP16' if self.use_fp16 else 'FP32'}...")
             for i in range(self.num_height):
                 for j in range(self.num_width):
                     idx = i * self.num_width + j
@@ -252,18 +268,19 @@ def get_optimal_threads():
         return cpu_count // 2
 
 def main():
-    model_path = '4xNomos2_realplksr_dysample_256_int8_fullyoptimized.onnx'
-    input_path = sys.argv[1] if len(sys.argv) > 1 else "/home/priyanshu/Downloads/images/unedited-photos-bee-on-sunflower-600nw-2474014217.jpg"
+    model_path = '4xNomos2_realplksr_dysample_256_fp16.onnx'  # Changed to FP16 model
+    input_path = sys.argv[1] if len(sys.argv) > 1 else "input.jpg"
     output_path = f'{input_path}_upscaled.png'
     
-    print('Initializing ESRGAN...')
+    print('Initializing ESRGAN with FP16 support...')
     model = ESRGANOptimized(
         model_path=model_path,
-        tile_size=512,  # Base size for splitting the image
-        model_input_size=256,  # Fixed model input size
+        tile_size=512,
+        model_input_size=256,
         scale=4,
         num_threads=get_optimal_threads(),
-        overlap_size=8  # Size of overlap between tiles
+        overlap_size=8,
+        use_fp16=True  # Enable FP16 mode
     )
     
     start_time = time.time()
