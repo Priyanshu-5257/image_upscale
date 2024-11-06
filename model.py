@@ -10,7 +10,6 @@ from queue import Queue
 import psutil
 
 
-    
 class ESRGANOptimized:
     def __init__(self, model_path, tile_size=256, model_input_size=128, prepad=0, scale=4, num_threads=2, overlap_size=32):
         self.model_path = model_path
@@ -44,11 +43,11 @@ class ESRGANOptimized:
         """Calculate optimal tile dimensions based on image size and model constraints."""
         # Ensure tile size is divisible by model input size
         tile_size = self.base_tile_size - (self.base_tile_size % self.model_input_size)
-        
+        print(tile_size)
         # Calculate number of tiles needed
         num_width = int(np.ceil((img_width + self.overlap_size) / (tile_size - self.overlap_size)))
         num_height = int(np.ceil((img_height + self.overlap_size) / (tile_size - self.overlap_size)))
-        
+        print(num_width, num_height)
         return tile_size, num_width, num_height
 
     def _create_blending_mask(self, tile_size):
@@ -73,8 +72,7 @@ class ESRGANOptimized:
         """Preprocess tile for model input."""
         # Resize tile to model input size
         img = img.resize((self.model_input_size, self.model_input_size), Image.BILINEAR)
-        img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
-        
+        #img = img.filter(ImageFilter.GaussianBlur(radius=0.5))
         input_data = np.asarray(img, dtype=np.float32).transpose(2, 0, 1) / 255.0
         return input_data[np.newaxis, ...]
 
@@ -89,7 +87,7 @@ class ESRGANOptimized:
             idx, tile, original_size = item
             try:
                 # Process the tile
-                result = self.session.run([], {self.model_input: tile})[0]
+                result = self.session.run([], {self.model_input: tile})[0][0]
                 result = np.clip(result.transpose(1, 2, 0), 0, 1) * 255.0
                 result_img = Image.fromarray(result.round().astype(np.uint8))
                 
@@ -254,18 +252,18 @@ def get_optimal_threads():
         return cpu_count // 2
 
 def main():
-    model_path = 'real_esrgan_int8.onnx'
-    input_path = sys.argv[1] if len(sys.argv) > 1 else "/home/priyanshu/Downloads/images/photo-1602066236239-d8dc47ff8d2a.jpeg"
+    model_path = '4xNomos2_realplksr_dysample_256_int8_fullyoptimized.onnx'
+    input_path = sys.argv[1] if len(sys.argv) > 1 else "/home/priyanshu/Downloads/images/unedited-photos-bee-on-sunflower-600nw-2474014217.jpg"
     output_path = f'{input_path}_upscaled.png'
     
     print('Initializing ESRGAN...')
     model = ESRGANOptimized(
         model_path=model_path,
-        tile_size=256,  # Base size for splitting the image
-        model_input_size=128,  # Fixed model input size
+        tile_size=512,  # Base size for splitting the image
+        model_input_size=256,  # Fixed model input size
         scale=4,
         num_threads=get_optimal_threads(),
-        overlap_size=16  # Size of overlap between tiles
+        overlap_size=8  # Size of overlap between tiles
     )
     
     start_time = time.time()

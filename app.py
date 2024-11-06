@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
 # Import statements
-from model import ESRGANOptimized
+from new import ESRGANOptimized
 import gradio as gr
 import os
 import time
 import psutil
 
+# Processing function
 def get_optimal_threads():
     cpu_count = psutil.cpu_count()
     if cpu_count <= 2:
@@ -14,22 +15,24 @@ def get_optimal_threads():
     elif cpu_count <= 4:
         return 2
     else:
-        return cpu_count - 2
+        return cpu_count // 2
     
-# Processing function
-def upscale_image(input_image):
+def upscale_image(input_image, scale_factor):
     if input_image is None:
         return None, "No image provided"
     
     try:
         # Initialize model
+        if scale_factor is None:
+            scale_factor = 1
+        tile_size = 256 * scale_factor
         model = ESRGANOptimized(
-            model_path='real_esrgan_int8.onnx',
-            tile_size=256,
-            model_input_size=128,
+            model_path='4xNomos2_realplksr_dysample_256_int8_fullyoptimized.onnx',
+            tile_size=tile_size,
+            model_input_size=256,
             scale=4,
             num_threads=get_optimal_threads(),
-            overlap_size=16
+            overlap_size=8
         )
         
         # Save and process image
@@ -51,19 +54,23 @@ def upscale_image(input_image):
 
 # Create and launch interface
 if __name__ == "__main__":
+    scales = [1, 2, 3, 4, 6, 8]
+    scale_dropdown = gr.Dropdown(scales, label="Upscale Factor")
+    
     iface = gr.Interface(
-        fn=upscale_image,
-        inputs=gr.Image(type="pil"),
+        fn=lambda input_image, scale_factor: upscale_image(input_image, scale_factor),
+        inputs=[gr.Image(type="pil"), scale_dropdown],
         outputs=[
             gr.Image(type="filepath", label="Upscaled Image"),
             gr.Textbox(label="Status")
         ],
-        title="ESRGAN Image Upscaler",
-        description="Upload an image to enhance its resolution"
+        title="Image Upscaler",
+        description="Upload an image and select the upscale factor to enhance its resolution"
     )
     
     iface.launch(
         share=True,
         server_name="0.0.0.0",
+        debug=True,
         server_port=7860
     )
