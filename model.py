@@ -226,7 +226,7 @@ class ESRGANOptimized:
             out_img = np.clip(out_img, 0, 255).astype(np.uint8)
             
             # Convert to PIL Image and save
-            Image.fromarray(out_img).save(output_path, "PNG", optimize=True)
+            Image.fromarray(out_img).save(output_path, "JPEG", optimize=True)
             
             # Wait for threads to finish
             for t in threads:
