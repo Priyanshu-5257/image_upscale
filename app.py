@@ -36,16 +36,15 @@ def upscale_image(input_image, scale_factor, model_path):
             overlap_size=8
         )
         
-        # Get original filename without extension
-        original_path = Path(input_image.name)
-        base_name = original_path.stem
+        # Generate a unique filename for the input image
+        input_path = f"/tmp/input_{time.time():.0f}.png"
+        input_image.save(input_path)
         
         # Create output filename with '_upscaled' suffix
-        output_filename = f"{base_name}_upscaled{original_path.suffix}"
-        input_path = f"/tmp/{original_path.name}"
+        base_name = Path(input_path).stem
+        output_filename = f"{base_name}_upscaled.png"
         output_path = f"/tmp/{output_filename}"
         
-        input_image.save(input_path)
         start_time = time.time()
         
         if model.process_image(input_path, output_path):
